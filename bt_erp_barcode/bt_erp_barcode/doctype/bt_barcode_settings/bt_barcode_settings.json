@@ -1,0 +1,63 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2026-03-20 21:01:00.454423",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "section_break_format",
+  "barcode_dyamic_format",
+  "section_break_ref",
+  "format_references"
+ ],
+ "fields": [
+  {
+   "fieldname": "section_break_format",
+   "fieldtype": "Section Break",
+   "label": "Format"
+  },
+  {
+   "fieldname": "barcode_dyamic_format",
+   "fieldtype": "Data",
+   "label": "Barcode Dynamic Format"
+  },
+  {
+   "fieldname": "section_break_ref",
+   "fieldtype": "Section Break",
+   "label": "Placeholder Reference"
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "format_references",
+   "fieldtype": "HTML",
+   "label": "Format References",
+   "options": "<table class=\"table table-bordered table-condensed\"><thead><tr><th>Placeholder</th><th>Description</th><th>Example</th></tr></thead><tbody><tr><td><code>{item_code}</code></td><td>Item Code from BT Barcode Item</td><td>HIIIIIITYYY, TEST</td></tr><tr><td><code>{production_plan}</code></td><td>Production Plan name</td><td>MFG-PP-2026-00001-1</td></tr><tr><td><code>{year}</code></td><td>Year from Posting Date</td><td>2026</td></tr><tr><td><code>{idx}</code></td><td>Row index (1, 2, 3...)</td><td>1, 2, 3</td></tr></tbody></table><p class=\"text-muted\"><b>Example format:</b> <code>{item_code}-{production_plan}-{year}-{idx}</code></p><p class=\"text-muted\"><b>Result:</b> HIIIIIITYYY-MFG-PP-2026-00001-1-2026-1</p>"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-03-20 21:06:42.705963",
+ "modified_by": "Administrator",
+ "module": "BT ERP Barcode",
+ "name": "BT Barcode Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
