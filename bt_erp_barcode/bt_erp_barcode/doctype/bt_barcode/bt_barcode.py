@@ -4,7 +4,8 @@
 import frappe
 from frappe.model.document import Document
 from frappe.utils import flt, getdate
-
+from frappe.model.naming import make_autoname
+from datetime import datetime
 
 class BTBarcode(Document):
 	pass
@@ -106,3 +107,22 @@ def generate_serial_numbers_for_items(items, production_plan: str = "", posting_
 		)
 		result.append(serial_number)
 	return result
+
+@frappe.whitelist()
+def generate_barcode(production_plan, posting_date):
+
+    # 1. Month & Year from posting_date
+    date_obj = datetime.strptime(posting_date, "%Y-%m-%d")
+    month = date_obj.strftime("%m")
+    year = date_obj.strftime("%y")
+
+    # 2. Extract WO digits
+    wo_digits = ''.join(filter(str.isdigit, production_plan or ""))[-4:].zfill(4)
+
+    # 3. Prefix
+    prefix = f"{month}{year}{wo_digits}"
+
+    # 4. Generate series using prefix
+    serial = make_autoname(prefix + ".####")
+
+    return serial

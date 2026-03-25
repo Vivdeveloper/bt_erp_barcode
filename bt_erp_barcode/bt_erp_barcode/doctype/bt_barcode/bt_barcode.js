@@ -88,3 +88,21 @@ frappe.ui.form.on("BT Barcode", {
 		}
 	},
 });
+
+frappe.ui.form.on('BT Barcode Item', {
+    generate_barcode: function(frm, cdt, cdn) {
+        frappe.call({
+            method: "bt_erp_barcode.bt_erp_barcode.doctype.bt_barcode.bt_barcode.generate_barcode",
+            args: {
+                production_plan: frm.doc.production_plan,
+                posting_date: frm.doc.posting_date
+            },
+            callback: function(r) {
+                if (r.message) {
+                    frappe.model.set_value(cdt, cdn, 'serial_number', r.message);
+                    frappe.model.set_value(cdt, cdn, 'barcode', r.message);
+                }
+            }
+        });
+    }
+});
