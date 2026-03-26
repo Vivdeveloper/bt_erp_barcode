@@ -31,14 +31,14 @@
    "fieldname": "format_references",
    "fieldtype": "HTML",
    "label": "Format References",
-   "options": "<table class=\"table table-bordered table-condensed\"><thead><tr><th>Placeholder</th><th>Description</th><th>Example</th></tr></thead><tbody><tr><td><code>{item_code}</code></td><td>Item Code from BT Barcode Item</td><td>HIIIIIITYYY, TEST</td></tr><tr><td><code>{production_plan}</code></td><td>Production Plan name</td><td>MFG-PP-2026-00001-1</td></tr><tr><td><code>{year}</code></td><td>Year from Posting Date</td><td>2026</td></tr><tr><td><code>{idx}</code></td><td>Row index (1, 2, 3...)</td><td>1, 2, 3</td></tr></tbody></table><p class=\"text-muted\"><b>Example format:</b> <code>{item_code}-{production_plan}-{year}-{idx}</code></p><p class=\"text-muted\"><b>Result:</b> HIIIIIITYYY-MFG-PP-2026-00001-1-2026-1</p>"
+   "options": "<table class=\"table table-bordered table-condensed\"><thead><tr><th>Placeholder</th><th>Description</th><th>Example</th></tr></thead><tbody><tr><td><code>{month}</code></td><td>Month from Posting Date</td><td>3, 4</td></tr><tr><td><code>{year}</code></td><td>Year from Posting Date</td><td>2026</td></tr><tr><td><code>{production_plan}</code></td><td>Production Plan name</td><td>MFG-PP-2026-00001-1</td></tr><tr><td><code>{serial_number}</code></td><td>Autoname Series .####</td><td>0001, 0002</td></tr></tbody></table><p class=\"text-muted\"><b>Example format:</b> <code>{month}-{year}-{production_plan}-{serial_number}</code></p><p class=\"text-muted\"><b>Result:</b> 03-26-1199-0001</p>"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-03-20 21:06:42.705963",
+ "modified": "2026-03-25 19:23:10.939294",
  "modified_by": "Administrator",
  "module": "BT ERP Barcode",
  "name": "BT Barcode Settings",
