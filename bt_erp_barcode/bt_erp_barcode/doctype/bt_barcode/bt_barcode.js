@@ -73,6 +73,8 @@ frappe.ui.form.on("BT Barcode", {
 							frm.add_child("items", {
 								item_code: row.item_code,
 								item_name: row.item_name,
+								customer_ref_code: row.customer_ref_code,
+								ref_code: row.customer_ref_code,
 								qty: row.qty,
 								uom: row.uom,
 								serial_number: row.serial_number,
@@ -80,8 +82,19 @@ frappe.ui.form.on("BT Barcode", {
 						});
 						frm.refresh_field("items");
 					}
-				},
+				},	
 			});
+			frappe.call({
+				method: "bt_erp_barcode.bt_erp_barcode.doctype.bt_barcode.bt_barcode.get_so",
+				args: {
+					production_plan: frm.doc.production_plan,
+				},
+				callback(r) {
+					if (r.message && r.message.length){
+						frm.set_value('sales_order', r.message)
+					}
+				}
+			})
 		} else {
 			frm.clear_table("items");
 			frm.refresh_field("items");
@@ -104,5 +117,6 @@ frappe.ui.form.on('BT Barcode Item', {
                 }
             }
         });
-    }
+    },
+
 });

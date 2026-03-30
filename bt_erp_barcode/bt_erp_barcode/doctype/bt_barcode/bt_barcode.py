@@ -61,8 +61,12 @@ def get_items_from_production_plan(production_plan: str, posting_date: str | Non
 			serial_number = generate_serial_number(
 				format_str, row.item_code, production_plan, posting_date, idx
 			)
+			item_doc = frappe.get_doc("Item", row.item_code)
+			res = frappe.db.get_value("Sales Order", {'custom_work_order_no': production_plan}, pluck='name')
+			item_customer = frappe.db.get_value("Item Customer Detail", {'parent': row.item_code, 'customer_name': frappe.db.get_value("Sales Order", res, 'customer')}, 'ref_code')
 			result.append({
 				"item_code": row.item_code,
+				"customer_ref_code": item_customer,
 				"item_name": item_name,
 				"qty": 1,
 				"uom": row.stock_uom,
@@ -126,3 +130,15 @@ def generate_barcode(production_plan, posting_date):
     serial = make_autoname(prefix + ".####")
 
     return serial
+
+@frappe.whitelist()
+def get_so(production_plan):
+	res = frappe.db.get_value("Sales Order", {'custom_work_order_no': production_plan}, pluck='name')
+	if res:
+		return res
+	
+# @frappe.whitelist()
+# def get_cust_id(sales_order):
+# 	cust = frappe.db.get_value("Sales Order", sales_order, 'customer')
+# 	if cust:
+# 		return cust

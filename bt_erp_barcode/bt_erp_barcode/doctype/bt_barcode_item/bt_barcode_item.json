@@ -8,6 +8,8 @@
  "field_order": [
   "item_code",
   "item_name",
+  "customer_ref_code",
+  "ref_code",
   "qty",
   "uom",
   "generate_barcode",
@@ -60,13 +62,23 @@
    "fieldname": "barcode",
    "fieldtype": "Barcode",
    "label": "Barcode"
+  },
+  {
+   "fieldname": "customer_ref_code",
+   "fieldtype": "Data",
+   "label": "Customer Ref Code"
+  },
+  {
+   "fieldname": "ref_code",
+   "fieldtype": "Barcode",
+   "label": "Ref Code"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-03-25 17:37:17.133890",
+ "modified": "2026-03-31 00:59:04.389787",
  "modified_by": "Administrator",
  "module": "BT ERP Barcode",
  "name": "BT Barcode Item",
