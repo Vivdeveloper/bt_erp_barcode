@@ -15,6 +15,7 @@
   "posting_date",
   "sales_order",
   "section_break_mzpe",
+  "production_plans",
   "items"
  ],
  "fields": [
@@ -58,10 +59,9 @@
   },
   {
    "fieldname": "production_plan",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "label": "Production Plan",
-   "link_filters": "[[\"Production Plan\",\"docstatus\",\"=\",\"1\"]]",
-   "options": "Production Plan"
+   "link_filters": "[[\"Production Plan\",\"docstatus\",\"=\",\"1\"]]"
   },
   {
    "fieldname": "section_break_mzpe",
@@ -72,12 +72,18 @@
    "fieldtype": "Table",
    "label": "Items",
    "options": "BT Barcode Item"
+  },
+  {
+   "fieldname": "production_plans",
+   "fieldtype": "Table",
+   "label": "Production Plans",
+   "options": "BT Barcode Production Plan"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-03-20 20:53:27.008197",
+ "modified": "2026-05-15 14:30:24.631535",
  "modified_by": "Administrator",
  "module": "BT ERP Barcode",
  "name": "BT Barcode",
