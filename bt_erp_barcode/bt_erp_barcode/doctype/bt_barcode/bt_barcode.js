@@ -14,14 +14,6 @@ function bt_barcode_generate_row(frm, cdt, cdn) {
 		return;
 	}
 	const other_serials = get_other_serials(frm, cdn);
-	if (
-		row.serial_number &&
-		!row.serial_number.includes("{") &&
-		!other_serials.includes(row.serial_number)
-	) {
-		frappe.msgprint(__("Serial number already set."));
-		return;
-	}
 	frappe.call({
 		method: "bt_erp_barcode.bt_erp_barcode.doctype.bt_barcode.bt_barcode.generate_barcode",
 		args: {

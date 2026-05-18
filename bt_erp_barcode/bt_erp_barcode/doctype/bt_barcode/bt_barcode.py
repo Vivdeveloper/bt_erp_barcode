@@ -12,6 +12,9 @@ class BTBarcode(Document):
 		format_str = get_barcode_format()
 		for row in self.get("items") or []:
 			serial = cstr(row.get("serial_number")).strip()
+			barcode = cstr(row.get("barcode")).strip()
+			if barcode and barcode in used and barcode != serial:
+				serial = barcode
 			if not serial:
 				continue
 			if serial in used:
@@ -23,8 +26,8 @@ class BTBarcode(Document):
 					row.idx,
 					used,
 				)
-				row.serial_number = serial
-				row.barcode = serial
+			row.serial_number = serial
+			row.barcode = serial
 			used.add(serial)
 
 
@@ -57,7 +60,7 @@ def get_matching_production_plans(production_plan: str) -> list[str]:
 	return sorted(set(plans))
 
 
-SERIAL_NUMBER_PAD = 4
+SERIAL_NUMBER_PAD = 2
 
 
 def get_barcode_format():
@@ -113,7 +116,7 @@ def generate_serial_number(
 	posting_date,
 	idx: int,
 ) -> str:
-	"""Build serial from BT Barcode Settings. {count} = row idx padded (0001, 0002, …)."""
+	"""Build serial from BT Barcode Settings. {count} = row idx padded (01, 02, …)."""
 	replacements = _serial_format_replacements(posting_date, production_plan, item_code or "", idx)
 	return _apply_serial_format(format_str, replacements)
 
@@ -239,7 +242,7 @@ def generate_serial_number_for_row(
 	posting_date=None,
 	existing_serials=None,
 ):
-	"""Always assign next unique serial for this row idx (0001, 0002, 0003, …)."""
+	"""Always assign next unique serial for this row idx (01, 02, 03, …)."""
 	used = _parse_existing_serials(existing_serials)
 	format_str = get_barcode_format()
 	serial, _ = _next_unique_serial(
@@ -255,7 +258,7 @@ def generate_serial_number_for_row(
 
 @frappe.whitelist()
 def generate_serial_numbers_for_items(items, production_plan: str = "", posting_date: str | None = None):
-	"""Generate serials in table order. {serial_number} = row idx (0001, 0002, …); fix duplicates."""
+	"""Generate serials in table order. {serial_number} = row idx (01, 02, …); fix duplicates."""
 	if not items:
 		return []
 
