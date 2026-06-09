@@ -1,0 +1,31 @@
+{
+ "custom_fields": [],
+ "custom_perms": [],
+ "doctype": "BT Barcode",
+ "links": [],
+ "property_setters": [
+  {
+   "doc_type": "BT Barcode",
+   "doctype": "Property Setter",
+   "doctype_or_field": "DocField",
+   "field_name": "na",
+   "module": "BT ERP Barcode",
+   "name": "BT Barcode-na-label",
+   "property": "label",
+   "property_type": "Data",
+   "value": "Work Order"
+  },
+  {
+   "doc_type": "BT Barcode",
+   "doctype": "Property Setter",
+   "doctype_or_field": "DocField",
+   "field_name": "production_plan",
+   "module": "BT ERP Barcode",
+   "name": "BT Barcode-production_plan-label",
+   "property": "label",
+   "property_type": "Data",
+   "value": "Work Order"
+  }
+ ],
+ "sync_on_migrate": 1
+}

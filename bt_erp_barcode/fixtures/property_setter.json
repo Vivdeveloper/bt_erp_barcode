@@ -1,0 +1,38 @@
+[
+ {
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "doc_type": "BT Barcode",
+  "field_name": "production_plan",
+  "is_system_generated": 0,
+  "module": "BT ERP Barcode",
+  "property": "label",
+  "property_type": "Data",
+  "value": "Work Order",
+  "name": "BT Barcode-production_plan-label"
+ },
+ {
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "doc_type": "BT Barcode",
+  "field_name": "na",
+  "is_system_generated": 0,
+  "module": "BT ERP Barcode",
+  "property": "label",
+  "property_type": "Data",
+  "value": "Work Order",
+  "name": "BT Barcode-na-label"
+ },
+ {
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "doc_type": "BT Barcode",
+  "field_name": "sales_order",
+  "is_system_generated": 0,
+  "module": "BT ERP Barcode",
+  "property": "hidden",
+  "property_type": "Check",
+  "value": "1",
+  "name": "BT Barcode-sales_order-hidden"
+ }
+]

@@ -5,6 +5,23 @@ app_description = "Barcode management for BT ERP"
 app_email = "admin@example.com"
 app_license = "mit"
 
+fixtures = [
+	{
+		"dt": "Property Setter",
+		"filters": [
+			[
+				"name",
+				"in",
+				[
+					"BT Barcode-production_plan-label",
+					"BT Barcode-na-label",
+					"BT Barcode-sales_order-hidden",
+				],
+			]
+		],
+	},
+]
+
 # Apps
 # ------------------
 

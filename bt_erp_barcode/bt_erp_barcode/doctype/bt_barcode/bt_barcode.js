@@ -1,6 +1,17 @@
 // Copyright (c) 2026, BT ERP and contributors
 // For license information, please see license.txt
 
+const PRODUCTION_PLAN_FILTER = {
+	filters: { docstatus: ["in", [0, 1]] },
+};
+
+const ORDER_ACCEPTANCE_FILTER = {
+	filters: {
+		docstatus: ["in", [0, 1]],
+		name: ["like", "OA-%"],
+	},
+};
+
 function get_other_serials(frm, cdn) {
 	return (frm.doc.items || [])
 		.filter((row) => row.name !== cdn && row.serial_number)
@@ -13,7 +24,6 @@ function bt_barcode_generate_row(frm, cdt, cdn) {
 		frappe.msgprint(__("Please set Item Code first."));
 		return;
 	}
-	const other_serials = get_other_serials(frm, cdn);
 	frappe.call({
 		method: "bt_erp_barcode.bt_erp_barcode.doctype.bt_barcode.bt_barcode.generate_barcode",
 		args: {
@@ -21,7 +31,7 @@ function bt_barcode_generate_row(frm, cdt, cdn) {
 			idx: row.idx,
 			production_plan: frm.doc.production_plan || "",
 			posting_date: frm.doc.posting_date,
-			existing_serials: JSON.stringify(other_serials),
+			existing_serials: JSON.stringify(get_other_serials(frm, cdn)),
 		},
 		callback(r) {
 			if (!r.exc && r.message) {
@@ -68,67 +78,91 @@ function inject_grid_barcode_buttons(frm) {
 		const grid_refresh = grid.refresh.bind(grid);
 		grid.refresh = function (...args) {
 			const out = grid_refresh(...args);
-			setTimeout(() => inject_grid_barcode_buttons(frm), 0);
+			inject_grid_barcode_buttons(frm);
 			return out;
 		};
 	}
 }
 
+function populate_production_plans(frm, plans) {
+	frm.clear_table("production_plans");
+	(plans || []).forEach((plan) => {
+		frm.add_child("production_plans", { production_plan: plan });
+	});
+	frm.refresh_field("production_plans");
+}
+
+function fetch_production_plans(frm) {
+	const production_plan = (frm.doc.production_plan || "").trim();
+	if (!production_plan) {
+		populate_production_plans(frm, []);
+		return;
+	}
+	frappe.call({
+		method: "bt_erp_barcode.bt_erp_barcode.doctype.bt_barcode.bt_barcode.get_production_plans",
+		args: { production_plan },
+		callback(r) {
+			if (r.exc || !r.message) {
+				return;
+			}
+			const { base, plans } = r.message;
+			if (base && base !== frm.doc.production_plan) {
+				frm.doc.production_plan = base;
+				frm.refresh_field("production_plan");
+			}
+			populate_production_plans(frm, plans);
+		},
+	});
+}
+
+function populate_items(frm, items) {
+	frm.clear_table("items");
+	(items || []).forEach((row) => {
+		const child = frm.add_child("items", {
+			item_code: row.item_code,
+			customer_ref_code: row.customer_ref_code || "",
+			qty: row.qty,
+			uom: row.uom,
+			serial_number: row.serial_number || "",
+		});
+		if (row.item_name) {
+			frappe.model.set_value(child.doctype, child.name, "item_name", row.item_name);
+		}
+	});
+	frm.refresh_field("items");
+	inject_grid_barcode_buttons(frm);
+}
+
+function fetch_items_from_order_acceptance(frm) {
+	const order_acceptance = (frm.doc.order_acceptance || "").trim();
+	if (!order_acceptance) {
+		populate_items(frm, []);
+		return;
+	}
+	frappe.call({
+		method:
+			"bt_erp_barcode.bt_erp_barcode.doctype.bt_barcode.bt_barcode.get_items_from_order_acceptance",
+		args: { order_acceptance },
+		callback(r) {
+			if (!r.exc) {
+				populate_items(frm, r.message || []);
+			}
+		},
+	});
+}
+
 frappe.ui.form.on("BT Barcode", {
 	refresh(frm) {
 		inject_grid_barcode_buttons(frm);
+		frm.set_query("production_plan", () => PRODUCTION_PLAN_FILTER);
+		frm.set_query("production_plan", "production_plans", () => PRODUCTION_PLAN_FILTER);
+		frm.set_query("order_acceptance", () => ORDER_ACCEPTANCE_FILTER);
 	},
 	production_plan(frm) {
-		if (!frm.doc.production_plan) {
-			frm.clear_table("items");
-			frm.clear_table("production_plans");
-			frm.refresh_field("items");
-			frm.refresh_field("production_plans");
-			return;
-		}
-		frappe.call({
-			method: "bt_erp_barcode.bt_erp_barcode.doctype.bt_barcode.bt_barcode.resolve_production_plan_data",
-			args: {
-				production_plan: frm.doc.production_plan,
-				posting_date: frm.doc.posting_date,
-			},
-			callback(r) {
-				if (r.exc || !r.message) {
-					return;
-				}
-				const { base, plans, items, sales_order } = r.message;
-				if (base && base !== frm.doc.production_plan) {
-					frm.set_value("production_plan", base);
-				}
-				frm.clear_table("production_plans");
-				(plans || []).forEach((plan) => {
-					frm.add_child("production_plans", { production_plan: plan });
-				});
-				frm.refresh_field("production_plans");
-				frm.clear_table("items");
-				(items || []).forEach((row) => {
-					frm.add_child("items", {
-						item_code: row.item_code,
-						item_name: row.item_name,
-						customer_ref_code: row.customer_ref_code,
-						ref_code: row.customer_ref_code,
-						qty: row.qty,
-						uom: row.uom,
-						serial_number: row.serial_number,
-					});
-				});
-				frm.refresh_field("items");
-				inject_grid_barcode_buttons(frm);
-				if (sales_order) {
-					frm.set_value("sales_order", sales_order);
-				}
-				if (!plans || !plans.length) {
-					frappe.msgprint(
-						__("No Production Plans found for {0}", [base || frm.doc.production_plan])
-					);
-				}
-			},
-		});
+		fetch_production_plans(frm);
+	},
+	order_acceptance(frm) {
+		fetch_items_from_order_acceptance(frm);
 	},
 });
 

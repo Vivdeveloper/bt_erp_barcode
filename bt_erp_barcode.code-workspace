@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": ".",
+			"name": "BT ERP Barcode"
+		}
+	],
+	"settings": {
+		"python.defaultInterpreterPath": "/home/admin1/bartakke/env/bin/python",
+		"files.exclude": {
+			"**/__pycache__": true,
+			"**/*.pyc": true
+		}
+	}
+}

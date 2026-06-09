@@ -42,19 +42,19 @@ def get_production_plan_base(production_plan: str) -> str:
 
 
 def get_matching_production_plans(production_plan: str) -> list[str]:
-	"""All submitted Production Plans for base WO26-002: WO26-002/1, /2, /1-2, etc."""
+	"""Draft and submitted Production Plans for base WO26-002: WO26-002/1, /2, /1-2, etc."""
 	base = get_production_plan_base(production_plan)
 	if not base:
 		return []
 
+	docstatus_filter = ["in", [0, 1]]
 	plans = frappe.get_all(
 		"Production Plan",
-		filters={"name": ["like", f"{base}/%"], "docstatus": 1},
+		filters={"name": ["like", f"{base}/%"], "docstatus": docstatus_filter},
 		pluck="name",
 		order_by="name asc",
 	)
-	# Include base WO only when it is a submitted Production Plan
-	if frappe.db.exists("Production Plan", {"name": base, "docstatus": 1}):
+	if frappe.db.exists("Production Plan", {"name": base, "docstatus": docstatus_filter}):
 		plans.insert(0, base)
 
 	return sorted(set(plans))
@@ -184,31 +184,237 @@ def _get_items_for_single_production_plan(plan_name: str) -> list[dict]:
 	return result
 
 
+ORDER_ACCEPTANCE_DOCTYPE = "Order Acceptance"
+ORDER_ACCEPTANCE_ITEM_DOCTYPE = "Order Acceptance Item"
+# Order Acceptance in UI is Sales Order (OA-xxx/A naming) on this site.
+ORDER_ACCEPTANCE_SALES_ORDER_DOCTYPE = "Sales Order"
+
+
+def _resolve_order_acceptance_doctype(name: str) -> str | None:
+	"""Order Acceptance documents are Sales Order (OA-…) or custom Order Acceptance."""
+	name = cstr(name).strip()
+	if not name:
+		return None
+	if frappe.db.exists("DocType", ORDER_ACCEPTANCE_DOCTYPE) and frappe.db.exists(
+		ORDER_ACCEPTANCE_DOCTYPE, name
+	):
+		return ORDER_ACCEPTANCE_DOCTYPE
+	if frappe.db.exists(ORDER_ACCEPTANCE_SALES_ORDER_DOCTYPE, name):
+		return ORDER_ACCEPTANCE_SALES_ORDER_DOCTYPE
+	return None
+
+
+def _child_table_has_item_fields(child_meta) -> bool:
+	for fieldname in ("item_code", "item"):
+		if child_meta.get_field(fieldname):
+			return True
+	item_name_field = child_meta.get_field("item_name")
+	if not item_name_field:
+		return False
+	if item_name_field.fieldtype == "Link" and item_name_field.options == "Item":
+		return True
+	return item_name_field.fieldtype in ("Data", "Small Text", "Text", "Text Editor")
+
+
+def _find_order_acceptance_items_table(meta) -> str | None:
+	"""Resolve Order Acceptance line-items table (usually `items`)."""
+	if meta.has_field("items"):
+		child_meta = frappe.get_meta(meta.get_field("items").options)
+		if _child_table_has_item_fields(child_meta):
+			return "items"
+
+	for field in meta.get_table_fields():
+		child_meta = frappe.get_meta(field.options)
+		if _child_table_has_item_fields(child_meta):
+			return field.fieldname
+	return None
+
+
+def _resolve_item_code_from_row(row) -> str | None:
+	"""Map OA line to Item.name (handles item_code, item, or item_name-only rows)."""
+	for fieldname in ("item_code", "item"):
+		code = cstr(row.get(fieldname)).strip()
+		if code and frappe.db.exists("Item", code):
+			return code
+
+	item_name_value = cstr(row.get("item_name")).strip()
+	if not item_name_value:
+		return None
+	if frappe.db.exists("Item", item_name_value):
+		return item_name_value
+
+	by_name = frappe.db.get_value("Item", {"item_name": item_name_value}, "name")
+	if by_name:
+		return by_name
+
+	by_like = frappe.db.sql(
+		"""
+		select name from `tabItem`
+		where item_name = %s or item_name like %s
+		order by length(item_name) asc
+		limit 1
+		""",
+		(item_name_value, f"{item_name_value[:80]}%"),
+	)
+	return by_like[0][0] if by_like else None
+
+
+def _order_acceptance_row_qty(row) -> float:
+	for fieldname in ("qty", "stock_qty", "work_order_qty", "planned_qty", "quantity"):
+		qty = flt(row.get(fieldname))
+		if qty:
+			return qty
+	return 1
+
+
+def _order_acceptance_row_uom(row, item_code: str) -> str | None:
+	uom = cstr(row.get("uom") or row.get("stock_uom")).strip()
+	if uom:
+		return uom
+	if item_code:
+		return frappe.db.get_value("Item", item_code, "stock_uom")
+	return None
+
+
+def _customer_for_order_acceptance(doc) -> str | None:
+	for fieldname in ("customer", "custom_customer_name", "party_name"):
+		customer = doc.get(fieldname)
+		if customer:
+			return customer
+	work_order = doc.get("custom_work_order_no")
+	if not work_order:
+		return None
+	sales_order = frappe.db.get_value(
+		"Sales Order", {"custom_work_order_no": work_order}, "name"
+	)
+	if sales_order:
+		return frappe.db.get_value("Sales Order", sales_order, "customer")
+	return None
+
+
+def _item_name_from_order_row(row, item_code: str) -> str:
+	"""Prefer Sales Order line description over generic Item master name (e.g. Sales Item → '.')."""
+	line_name = cstr(row.get("item_name")).strip()
+	if line_name:
+		return line_name
+	if item_code:
+		return cstr(frappe.db.get_value("Item", item_code, "item_name") or "").strip()
+	return ""
+
+
+def _customer_ref_code(item_code: str, customer: str | None, row=None) -> str | None:
+	if row:
+		for fieldname in ("customer_item_code", "customer_ref_code", "ref_code"):
+			ref = cstr(row.get(fieldname)).strip()
+			if ref:
+				return ref
+	if not (item_code and customer):
+		return None
+	return frappe.db.get_value(
+		"Item Customer Detail",
+		{"parent": item_code, "customer_name": customer},
+		"ref_code",
+	)
+
+
+def _get_order_acceptance_child_rows(order_acceptance: str, table_field: str | None, child_doctype: str | None):
+	if table_field and child_doctype:
+		rows = frappe.get_all(
+			child_doctype,
+			filters={
+				"parent": order_acceptance,
+				"parenttype": ORDER_ACCEPTANCE_DOCTYPE,
+				"parentfield": table_field,
+			},
+			fields=["*"],
+			order_by="idx asc",
+		)
+		if rows:
+			return rows
+
+	if frappe.db.exists("DocType", ORDER_ACCEPTANCE_ITEM_DOCTYPE):
+		return frappe.get_all(
+			ORDER_ACCEPTANCE_ITEM_DOCTYPE,
+			filters={
+				"parent": order_acceptance,
+				"parenttype": ORDER_ACCEPTANCE_DOCTYPE,
+			},
+			fields=["*"],
+			order_by="idx asc",
+		)
+	return []
+
+
+def _barcode_items_from_child_rows(rows, customer: str | None) -> list[dict]:
+	"""Map Order Acceptance line items to BT Barcode item rows."""
+	result = []
+	for row in rows or []:
+		row = frappe._dict(row) if isinstance(row, dict) else row
+		item_code = _resolve_item_code_from_row(row)
+		if not item_code:
+			continue
+		item_name = _item_name_from_order_row(row, item_code)
+		item_customer = _customer_ref_code(item_code, customer, row)
+		uom = _order_acceptance_row_uom(row, item_code)
+		qty = max(1, int(flt(_order_acceptance_row_qty(row))))
+		for _ in range(qty):
+			result.append({
+				"item_code": item_code,
+				"customer_ref_code": item_customer,
+				"item_name": item_name,
+				"qty": 1,
+				"uom": uom,
+				"serial_number": "",
+			})
+	return result
+
+
+def get_items_from_order_acceptance_doc(order_acceptance: str) -> list[dict]:
+	order_acceptance = cstr(order_acceptance).strip()
+	if not order_acceptance:
+		return []
+
+	doctype = _resolve_order_acceptance_doctype(order_acceptance)
+	if not doctype:
+		return []
+
+	doc = frappe.get_doc(doctype, order_acceptance)
+
+	if doctype == ORDER_ACCEPTANCE_SALES_ORDER_DOCTYPE:
+		return _barcode_items_from_child_rows(doc.items, doc.get("customer"))
+
+	table_field = _find_order_acceptance_items_table(doc.meta)
+	child_doctype = doc.meta.get_field(table_field).options if table_field else None
+
+	rows = list(doc.get(table_field) or []) if table_field else []
+	if not rows:
+		rows = _get_order_acceptance_child_rows(order_acceptance, table_field, child_doctype)
+
+	customer = _customer_for_order_acceptance(doc)
+	return _barcode_items_from_child_rows(rows, customer)
+
+
 @frappe.whitelist()
-def resolve_production_plan_data(production_plan: str, posting_date: str | None = None):
-	"""Resolve base WO (e.g. WO26-002), matching plans, and all items."""
+def get_items_from_order_acceptance(order_acceptance: str, posting_date: str | None = None):
+	"""Fetch Items table rows from Order Acceptance child items."""
+	return get_items_from_order_acceptance_doc(order_acceptance)
+
+
+@frappe.whitelist()
+def get_production_plans(production_plan: str):
+	"""Base work order and related Production Plan names for the production_plans child table."""
 	base = get_production_plan_base(production_plan)
-	plans = get_matching_production_plans(base)
-	if not plans:
-		return {"base": base, "plans": [], "items": [], "sales_order": None}
-
-	items = []
-	for plan_name in plans:
-		items.extend(_get_items_for_single_production_plan(plan_name))
-
-	return {
-		"base": base,
-		"plans": plans,
-		"items": items,
-		"sales_order": get_sales_order_for_plans(base, plans),
-	}
+	return {"base": base, "plans": get_matching_production_plans(base)}
 
 
 @frappe.whitelist()
 def get_items_from_production_plan(production_plan: str, posting_date: str | None = None):
 	"""Fetch items from all Production Plans under base (WO26-002 → WO26-002/1, /2, …)."""
-	data = resolve_production_plan_data(production_plan, posting_date)
-	return data.get("items") or []
+	base = get_production_plan_base(production_plan)
+	items = []
+	for plan_name in get_matching_production_plans(base):
+		items.extend(_get_items_for_single_production_plan(plan_name))
+	return items
 
 
 def get_sales_order_for_plans(base: str, plans: list[str] | None = None) -> str | None:

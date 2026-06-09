@@ -13,10 +13,11 @@
   "production_plan",
   "column_break_zxtt",
   "posting_date",
-  "sales_order",
+  "order_acceptance",
   "section_break_mzpe",
   "production_plans",
-  "items"
+  "items",
+  "sales_order"
  ],
  "fields": [
   {
@@ -26,8 +27,17 @@
   {
    "fieldname": "sales_order",
    "fieldtype": "Link",
+   "hidden": 1,
    "label": "Sales Order",
    "link_filters": "[[\"Sales Order\",\"docstatus\",\"=\",\"1\"]]",
+   "options": "Sales Order",
+   "read_only": 1
+  },
+  {
+   "fieldname": "order_acceptance",
+   "fieldtype": "Link",
+   "label": "Order Acceptance",
+   "link_filters": "[[\"Sales Order\",\"docstatus\",\"in\",[0,1]],[\"Sales Order\",\"name\",\"like\",\"OA-%\"]]",
    "options": "Sales Order"
   },
   {
@@ -61,7 +71,7 @@
    "fieldname": "production_plan",
    "fieldtype": "Data",
    "label": "Production Plan",
-   "link_filters": "[[\"Production Plan\",\"docstatus\",\"=\",\"1\"]]"
+   "link_filters": "[[\"Production Plan\",\"docstatus\",\"in\",[0,1]]]"
   },
   {
    "fieldname": "section_break_mzpe",
@@ -83,7 +93,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-05-15 14:30:24.631535",
+ "modified": "2026-06-03 11:10:24.501052",
  "modified_by": "Administrator",
  "module": "BT ERP Barcode",
  "name": "BT Barcode",
