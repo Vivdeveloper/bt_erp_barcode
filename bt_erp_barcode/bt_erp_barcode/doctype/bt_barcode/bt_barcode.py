@@ -60,6 +60,53 @@ def get_matching_production_plans(production_plan: str) -> list[str]:
 	return sorted(set(plans))
 
 
+def get_work_orders_for_order_acceptance(production_plan: str) -> list[str]:
+	"""Base work order and related Production Plan names (WO26-021 → WO26-021, WO26-021/1, …)."""
+	base = get_production_plan_base(production_plan)
+	if not base:
+		return []
+	return list(dict.fromkeys([base, *get_matching_production_plans(base)]))
+
+
+def _sales_order_item_wo_fieldnames() -> list[str]:
+	"""WO fields on Order Acceptance items: custom_wo (Data) and legacy custom_work_order."""
+	meta = frappe.get_meta("Sales Order Item")
+	fields: list[str] = []
+	if meta.has_field("custom_wo"):
+		fields.append("custom_wo")
+	if meta.has_field("custom_work_order"):
+		fields.append("custom_work_order")
+	elif frappe.db.has_column("Sales Order Item", "custom_work_order"):
+		fields.append("custom_work_order")
+	return fields
+
+
+def get_order_acceptances_for_work_orders(work_orders: list[str]) -> list[str]:
+	"""Order Acceptance (Sales Order) names linked via items table WO field."""
+	work_orders = [w for w in (work_orders or []) if w]
+	if not work_orders:
+		return []
+
+	names: set[str] = set()
+	for fieldname in _sales_order_item_wo_fieldnames():
+		for parent in frappe.get_all(
+			"Sales Order Item",
+			filters={fieldname: ["in", work_orders]},
+			pluck="parent",
+		):
+			if parent and cstr(parent).startswith("OA-"):
+				names.add(parent)
+
+	return sorted(names)
+
+
+@frappe.whitelist()
+def get_order_acceptances_for_production_plan(production_plan: str):
+	"""Order Acceptance names whose item rows have WO matching the selected work order."""
+	work_orders = get_work_orders_for_order_acceptance(production_plan)
+	return get_order_acceptances_for_work_orders(work_orders)
+
+
 SERIAL_NUMBER_PAD = 2
 
 
@@ -418,14 +465,10 @@ def get_items_from_production_plan(production_plan: str, posting_date: str | Non
 
 
 def get_sales_order_for_plans(base: str, plans: list[str] | None = None) -> str | None:
-	"""Sales Order linked via custom_work_order_no on base or any matching plan."""
-	for name in [base, *(plans or [])]:
-		if not name:
-			continue
-		so = frappe.db.get_value("Sales Order", {"custom_work_order_no": name}, "name")
-		if so:
-			return so
-	return None
+	"""First Order Acceptance linked to base or matching production plans."""
+	work_orders = list(dict.fromkeys([base, *(plans or [])]))
+	order_acceptances = get_order_acceptances_for_work_orders(work_orders)
+	return order_acceptances[0] if order_acceptances else None
 
 
 def _parse_existing_serials(existing_serials) -> set:
@@ -528,8 +571,14 @@ def get_so(production_plan):
 	plans = get_matching_production_plans(base)
 	return get_sales_order_for_plans(base, plans)
 	
-# @frappe.whitelist()
-# def get_cust_id(sales_order):
-# 	cust = frappe.db.get_value("Sales Order", sales_order, 'customer')
-# 	if cust:
-# 		return cust
+@frappe.whitelist()
+def get_sales_order_item(production_plan):
+
+    exist = frappe.db.exists("Sales Order Item", {"custom_wo": production_plan})
+
+    records = frappe.get_all(
+        "Sales Order Item",
+        filters={"custom_wo": production_plan},
+        fields=["name", "parent", "custom_wo"]
+    )
+    return records

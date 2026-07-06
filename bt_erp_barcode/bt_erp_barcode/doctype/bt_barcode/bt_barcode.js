@@ -5,12 +5,40 @@ const PRODUCTION_PLAN_FILTER = {
 	filters: { docstatus: ["in", [0, 1]] },
 };
 
-const ORDER_ACCEPTANCE_FILTER = {
-	filters: {
-		docstatus: ["in", [0, 1]],
-		name: ["like", "OA-%"],
-	},
-};
+function setup_order_acceptance_query(frm) {
+	frm.set_query("order_acceptance", () => {
+		const production_plan = (frm.doc.production_plan || "").trim();
+		const names = frm._order_acceptances || [];
+
+		if (!production_plan) {
+			return { filters: { name: ["in", []] } };
+		}
+
+		return {
+			filters: {
+				docstatus: ["in", [0, 1]],
+				name: ["in", names.length ? names : ["__none__"]],
+			},
+		};
+	});
+}
+
+function refresh_order_acceptance_filter(frm) {
+	const production_plan = (frm.doc.production_plan || "").trim();
+	if (!production_plan) {
+		frm._order_acceptances = [];
+		return;
+	}
+
+	frappe.call({
+		method:
+			"bt_erp_barcode.bt_erp_barcode.doctype.bt_barcode.bt_barcode.get_order_acceptances_for_production_plan",
+		args: { production_plan },
+		callback(r) {
+			frm._order_acceptances = r.message || [];
+		},
+	});
+}
 
 function get_other_serials(frm, cdn) {
 	return (frm.doc.items || [])
@@ -96,6 +124,7 @@ function fetch_production_plans(frm) {
 	const production_plan = (frm.doc.production_plan || "").trim();
 	if (!production_plan) {
 		populate_production_plans(frm, []);
+		refresh_order_acceptance_filter(frm);
 		return;
 	}
 	frappe.call({
@@ -107,10 +136,11 @@ function fetch_production_plans(frm) {
 			}
 			const { base, plans } = r.message;
 			if (base && base !== frm.doc.production_plan) {
-				frm.doc.production_plan = base;
-				frm.refresh_field("production_plan");
+				// frm.doc.production_plan = base;
+				// frm.refresh_field("production_plan");
 			}
 			populate_production_plans(frm, plans);
+			refresh_order_acceptance_filter(frm);
 		},
 	});
 }
@@ -156,9 +186,36 @@ frappe.ui.form.on("BT Barcode", {
 		inject_grid_barcode_buttons(frm);
 		frm.set_query("production_plan", () => PRODUCTION_PLAN_FILTER);
 		frm.set_query("production_plan", "production_plans", () => PRODUCTION_PLAN_FILTER);
-		frm.set_query("order_acceptance", () => ORDER_ACCEPTANCE_FILTER);
+		setup_order_acceptance_query(frm);
+		refresh_order_acceptance_filter(frm);
 	},
 	production_plan(frm) {
+		// 
+		console.log("production_plan", frm.doc.production_plan);
+		if(frm.doc.production_plan){
+			frappe.call({
+				method: "bt_erp_barcode.bt_erp_barcode.doctype.bt_barcode.bt_barcode.get_sales_order_item",
+				args: { production_plan: frm.doc.production_plan },
+				callback(r) {
+					if(r.message){
+						// frm.set_value("order_acceptance", r.message);
+						console.log("r.message", r.message);
+						frm.set_query("order_acceptance", () => {
+							return {
+								filters: {
+									name: ["in", r.message.map((item) => item.parent)],
+								},
+							};
+						});
+						// frm.refresh_field("order_acceptance");
+					}
+				}
+			});
+		}
+		if (frm.doc.order_acceptance) {
+			// frm.set_value("order_acceptance", "");
+
+		}
 		fetch_production_plans(frm);
 	},
 	order_acceptance(frm) {

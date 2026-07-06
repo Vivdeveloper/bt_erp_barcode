@@ -37,7 +37,6 @@
    "fieldname": "order_acceptance",
    "fieldtype": "Link",
    "label": "Order Acceptance",
-   "link_filters": "[[\"Sales Order\",\"docstatus\",\"in\",[0,1]],[\"Sales Order\",\"name\",\"like\",\"OA-%\"]]",
    "options": "Sales Order"
   },
   {

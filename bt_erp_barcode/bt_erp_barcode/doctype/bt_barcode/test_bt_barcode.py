@@ -8,6 +8,8 @@ from bt_erp_barcode.bt_erp_barcode.doctype.bt_barcode.bt_barcode import (
 	SERIAL_NUMBER_PAD,
 	generate_serial_number,
 	get_items_from_order_acceptance_doc,
+	get_order_acceptances_for_work_orders,
+	get_work_orders_for_order_acceptance,
 )
 
 
@@ -56,3 +58,12 @@ class TestBTBarcode(FrappeTestCase):
 			self.assertEqual(items[0]["item_code"], so_item.item_code)
 			self.assertEqual(items[0]["item_name"], so_item.item_name)
 			self.assertEqual(items[0]["customer_ref_code"], so_item.customer_item_code)
+
+	def test_order_acceptances_linked_via_item_wo(self):
+		work_orders = get_work_orders_for_order_acceptance("WO26-019")
+		if not work_orders:
+			self.skipTest("No Production Plans for WO26-019 on this site")
+		order_acceptances = get_order_acceptances_for_work_orders(work_orders)
+		if not order_acceptances:
+			self.skipTest("No Order Acceptances with WO on items for WO26-019")
+		self.assertTrue(all(name.startswith("OA-") for name in order_acceptances))
