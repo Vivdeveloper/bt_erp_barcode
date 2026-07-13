@@ -190,31 +190,8 @@ frappe.ui.form.on("BT Barcode", {
 		refresh_order_acceptance_filter(frm);
 	},
 	production_plan(frm) {
-		// 
-		console.log("production_plan", frm.doc.production_plan);
-		if(frm.doc.production_plan){
-			frappe.call({
-				method: "bt_erp_barcode.bt_erp_barcode.doctype.bt_barcode.bt_barcode.get_sales_order_item",
-				args: { production_plan: frm.doc.production_plan },
-				callback(r) {
-					if(r.message){
-						// frm.set_value("order_acceptance", r.message);
-						console.log("r.message", r.message);
-						frm.set_query("order_acceptance", () => {
-							return {
-								filters: {
-									name: ["in", r.message.map((item) => item.parent)],
-								},
-							};
-						});
-						// frm.refresh_field("order_acceptance");
-					}
-				}
-			});
-		}
 		if (frm.doc.order_acceptance) {
 			// frm.set_value("order_acceptance", "");
-
 		}
 		fetch_production_plans(frm);
 	},

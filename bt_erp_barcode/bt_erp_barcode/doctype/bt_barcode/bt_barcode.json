@@ -68,9 +68,10 @@
   },
   {
    "fieldname": "production_plan",
-   "fieldtype": "Data",
-   "label": "Production Plan",
-   "link_filters": "[[\"Production Plan\",\"docstatus\",\"in\",[0,1]]]"
+   "fieldtype": "Link",
+   "label": "Work Order",
+   "link_filters": "[[\"Production Plan\",\"docstatus\",\"in\",[0,1]]]",
+   "options": "Production Plan"
   },
   {
    "fieldname": "section_break_mzpe",

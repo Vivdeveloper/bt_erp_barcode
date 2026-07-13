@@ -8,6 +8,29 @@ from frappe.utils import cint, cstr, flt, getdate
 
 class BTBarcode(Document):
 	def validate(self):
+		self.validate_unique_work_order()
+		self.validate_unique_serials()
+
+	def validate_unique_work_order(self):
+		"""Block creating/saving another BT Barcode for the same Work Order."""
+		work_order = cstr(self.production_plan).strip()
+		if not work_order:
+			return
+
+		filters = {"production_plan": work_order}
+		if not self.is_new():
+			filters["name"] = ["!=", self.name]
+
+		existing = frappe.db.get_value("BT Barcode", filters, "name")
+		if existing:
+			frappe.throw(
+				_("BT Barcode {0} already exists for Work Order {1}. Cannot create another entry for the same Work Order.").format(
+					frappe.bold(existing), frappe.bold(work_order)
+				),
+				title=_("Duplicate Work Order"),
+			)
+
+	def validate_unique_serials(self):
 		used = set()
 		format_str = get_barcode_format()
 		for row in self.get("items") or []:
@@ -81,30 +104,81 @@ def _sales_order_item_wo_fieldnames() -> list[str]:
 	return fields
 
 
-def get_order_acceptances_for_work_orders(work_orders: list[str]) -> list[str]:
-	"""Order Acceptance (Sales Order) names linked via items table WO field."""
+def _parse_wo_list(value: str | None) -> set[str]:
+	"""Split comma-separated WO values: 'WO26-130/1,WO26-130/2' → {'WO26-130/1', 'WO26-130/2'}."""
+	return {part.strip() for part in cstr(value).split(",") if part.strip()}
+
+
+def _sales_order_items_matching_work_orders(
+	work_orders: list[str], fields: list[str] | None = None
+) -> list[dict]:
+	"""Find Sales Order Item rows whose WO field equals or contains any work order.
+
+	custom_wo is often a comma-separated list (e.g. WO26-130/1,WO26-130/2,WO26-130/3),
+	so exact DB equality is not enough. Membership is checked after splitting on commas.
+	"""
 	work_orders = [w for w in (work_orders or []) if w]
 	if not work_orders:
 		return []
 
-	names: set[str] = set()
-	for fieldname in _sales_order_item_wo_fieldnames():
-		for parent in frappe.get_all(
-			"Sales Order Item",
-			filters={fieldname: ["in", work_orders]},
-			pluck="parent",
-		):
-			if parent and cstr(parent).startswith("OA-"):
-				names.add(parent)
+	fieldnames = _sales_order_item_wo_fieldnames()
+	if not fieldnames:
+		return []
 
-	return sorted(names)
+	wo_set = set(work_orders)
+	or_filters: list[list] = []
+	for fieldname in fieldnames:
+		for wo in work_orders:
+			or_filters.append([fieldname, "=", wo])
+			or_filters.append([fieldname, "like", f"%{wo}%"])
+
+	fetch_fields = list(dict.fromkeys(["name", "parent", *fieldnames, *(fields or [])]))
+	rows = frappe.get_all(
+		"Sales Order Item",
+		or_filters=or_filters,
+		fields=fetch_fields,
+	)
+
+	matched: list[dict] = []
+	for row in rows:
+		values: set[str] = set()
+		for fieldname in fieldnames:
+			values |= _parse_wo_list(row.get(fieldname))
+		if values & wo_set:
+			matched.append(row)
+	return matched
+
+
+def get_order_acceptances_for_work_orders(work_orders: list[str]) -> list[str]:
+	"""Order Acceptance (Sales Order) names linked via items table WO field."""
+	names: set[str] = set()
+	for row in _sales_order_items_matching_work_orders(work_orders):
+		parent = row.get("parent")
+		if parent and cstr(parent).startswith("OA-"):
+			names.add(parent)
+
+	if not names:
+		return []
+
+	return frappe.get_all(
+		"Sales Order",
+		filters={
+			"name": ["in", list(names)],
+			"docstatus": ["in", [0, 1]],
+		},
+		pluck="name",
+		order_by="name asc",
+	)
 
 
 @frappe.whitelist()
 def get_order_acceptances_for_production_plan(production_plan: str):
-	"""Order Acceptance names whose item rows have WO matching the selected work order."""
-	work_orders = get_work_orders_for_order_acceptance(production_plan)
-	return get_order_acceptances_for_work_orders(work_orders)
+	"""Order Acceptance names linked to the selected work order only (not sibling WOs)."""
+	production_plan = cstr(production_plan).strip()
+	if not production_plan:
+		return []
+	# Do not expand to WO26-130/2, /3, etc. — only the selected WO should drive OA options.
+	return get_order_acceptances_for_work_orders([production_plan])
 
 
 SERIAL_NUMBER_PAD = 2
@@ -573,12 +647,10 @@ def get_so(production_plan):
 	
 @frappe.whitelist()
 def get_sales_order_item(production_plan):
-
-    exist = frappe.db.exists("Sales Order Item", {"custom_wo": production_plan})
-
-    records = frappe.get_all(
-        "Sales Order Item",
-        filters={"custom_wo": production_plan},
-        fields=["name", "parent", "custom_wo"]
-    )
-    return records
+	"""Sales Order Item rows linked to the selected work order only."""
+	production_plan = cstr(production_plan).strip()
+	if not production_plan:
+		return []
+	return _sales_order_items_matching_work_orders(
+		[production_plan], fields=["name", "parent", "custom_wo"]
+	)
