@@ -5,3 +5,4 @@
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
 bt_erp_barcode.patches.fix_bt_barcode_work_order_label
+bt_erp_barcode.patches.fix_bt_barcode_work_order_link

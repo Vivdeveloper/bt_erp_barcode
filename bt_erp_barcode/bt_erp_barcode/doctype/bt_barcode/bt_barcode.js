@@ -165,6 +165,7 @@ function populate_items(frm, items) {
 
 function fetch_items_from_order_acceptance(frm) {
 	const order_acceptance = (frm.doc.order_acceptance || "").trim();
+	const production_plan = (frm.doc.production_plan || "").trim();
 	if (!order_acceptance) {
 		populate_items(frm, []);
 		return;
@@ -172,7 +173,10 @@ function fetch_items_from_order_acceptance(frm) {
 	frappe.call({
 		method:
 			"bt_erp_barcode.bt_erp_barcode.doctype.bt_barcode.bt_barcode.get_items_from_order_acceptance",
-		args: { order_acceptance },
+		args: {
+			order_acceptance,
+			production_plan,
+		},
 		callback(r) {
 			if (!r.exc) {
 				populate_items(frm, r.message || []);
@@ -190,10 +194,10 @@ frappe.ui.form.on("BT Barcode", {
 		refresh_order_acceptance_filter(frm);
 	},
 	production_plan(frm) {
-		if (frm.doc.order_acceptance) {
-			// frm.set_value("order_acceptance", "");
-		}
 		fetch_production_plans(frm);
+		if (frm.doc.order_acceptance) {
+			fetch_items_from_order_acceptance(frm);
+		}
 	},
 	order_acceptance(frm) {
 		fetch_items_from_order_acceptance(frm);

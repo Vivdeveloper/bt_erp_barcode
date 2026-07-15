@@ -14,6 +14,8 @@ fixtures = [
 				"in",
 				[
 					"BT Barcode-production_plan-label",
+					"BT Barcode-production_plan-fieldtype",
+					"BT Barcode-production_plan-options",
 					"BT Barcode-na-label",
 					"BT Barcode-sales_order-hidden",
 				],

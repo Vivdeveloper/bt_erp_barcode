@@ -466,18 +466,40 @@ def _get_order_acceptance_child_rows(order_acceptance: str, table_field: str | N
 	return []
 
 
-def _barcode_items_from_child_rows(rows, customer: str | None) -> list[dict]:
-	"""Map Order Acceptance line items to BT Barcode item rows."""
+def _barcode_items_from_child_rows(
+	rows,
+	customer: str | None,
+	work_order: str | None = None,
+) -> list[dict]:
+	"""Map Order Acceptance line items to BT Barcode item rows.
+
+	If work_order is set:
+	- only OA rows whose custom_wo list includes that work order are used
+	- quantity comes from Production Plan Item planned_qty (not OA qty)
+	"""
+	work_order = cstr(work_order).strip()
+	qty_by_item: dict[str, float] = {}
+	if work_order:
+		qty_by_item = _planned_qty_by_item_for_work_order(work_order)
+
 	result = []
 	for row in rows or []:
 		row = frappe._dict(row) if isinstance(row, dict) else row
+		if work_order and not _oa_row_matches_work_order(row, work_order):
+			continue
+
 		item_code = _resolve_item_code_from_row(row)
 		if not item_code:
 			continue
 		item_name = _item_name_from_order_row(row, item_code)
 		item_customer = _customer_ref_code(item_code, customer, row)
 		uom = _order_acceptance_row_uom(row, item_code)
-		qty = max(1, int(flt(_order_acceptance_row_qty(row))))
+
+		if work_order:
+			qty = _planned_qty_for_oa_row(row, item_code, qty_by_item)
+		else:
+			qty = max(1, int(flt(_order_acceptance_row_qty(row))))
+
 		for _ in range(qty):
 			result.append({
 				"item_code": item_code,
@@ -490,7 +512,72 @@ def _barcode_items_from_child_rows(rows, customer: str | None) -> list[dict]:
 	return result
 
 
-def get_items_from_order_acceptance_doc(order_acceptance: str) -> list[dict]:
+def _oa_row_matches_work_order(row, work_order: str) -> bool:
+	"""True if selected WO is in the row's comma-separated WO field."""
+	work_order = cstr(work_order).strip()
+	if not work_order:
+		return True
+	values: set[str] = set()
+	for fieldname in _sales_order_item_wo_fieldnames():
+		values |= _parse_wo_list(row.get(fieldname))
+	# Also accept a plain "wo" key if present on dict rows
+	if not values and row.get("wo"):
+		values |= _parse_wo_list(row.get("wo"))
+	return work_order in values
+
+
+def _planned_qty_by_item_for_work_order(work_order: str) -> dict[str, float]:
+	"""item_code → planned_qty from Production Plan Item for this Work Order."""
+	work_order = cstr(work_order).strip()
+	if not work_order or not frappe.db.exists("Production Plan", work_order):
+		return {}
+
+	qty_by_item: dict[str, float] = {}
+	for row in frappe.get_all(
+		"Production Plan Item",
+		filters={"parent": work_order, "parenttype": "Production Plan"},
+		fields=["item_code", "planned_qty"],
+	):
+		item_code = cstr(row.item_code).strip()
+		if not item_code:
+			continue
+		qty_by_item[item_code] = qty_by_item.get(item_code, 0) + flt(row.planned_qty)
+	return qty_by_item
+
+
+def _planned_qty_for_oa_row(row, item_code: str, qty_by_item: dict[str, float]) -> int:
+	"""Resolve Work Order planned qty for an OA line (fallback 1)."""
+	if not qty_by_item:
+		return 1
+
+	exact = qty_by_item.get(item_code)
+	if exact and exact > 0:
+		return max(1, int(exact))
+
+	# OA lines often use generic item_code (e.g. Sales Item); match via customer ref in PP item name/code
+	ref = ""
+	if row:
+		for fieldname in ("customer_item_code", "customer_ref_code", "ref_code"):
+			ref = cstr(row.get(fieldname)).strip()
+			if ref:
+				break
+	if ref:
+		for pp_item, qty in qty_by_item.items():
+			if ref in cstr(pp_item) and qty > 0:
+				return max(1, int(qty))
+
+	# Single FG on the Work Order → use that planned qty
+	if len(qty_by_item) == 1:
+		only_qty = next(iter(qty_by_item.values()))
+		if only_qty > 0:
+			return max(1, int(only_qty))
+
+	return 1
+
+
+def get_items_from_order_acceptance_doc(
+	order_acceptance: str, work_order: str | None = None
+) -> list[dict]:
 	order_acceptance = cstr(order_acceptance).strip()
 	if not order_acceptance:
 		return []
@@ -500,9 +587,10 @@ def get_items_from_order_acceptance_doc(order_acceptance: str) -> list[dict]:
 		return []
 
 	doc = frappe.get_doc(doctype, order_acceptance)
+	work_order = cstr(work_order).strip() or None
 
 	if doctype == ORDER_ACCEPTANCE_SALES_ORDER_DOCTYPE:
-		return _barcode_items_from_child_rows(doc.items, doc.get("customer"))
+		return _barcode_items_from_child_rows(doc.items, doc.get("customer"), work_order)
 
 	table_field = _find_order_acceptance_items_table(doc.meta)
 	child_doctype = doc.meta.get_field(table_field).options if table_field else None
@@ -512,13 +600,17 @@ def get_items_from_order_acceptance_doc(order_acceptance: str) -> list[dict]:
 		rows = _get_order_acceptance_child_rows(order_acceptance, table_field, child_doctype)
 
 	customer = _customer_for_order_acceptance(doc)
-	return _barcode_items_from_child_rows(rows, customer)
+	return _barcode_items_from_child_rows(rows, customer, work_order)
 
 
 @frappe.whitelist()
-def get_items_from_order_acceptance(order_acceptance: str, posting_date: str | None = None):
-	"""Fetch Items table rows from Order Acceptance child items."""
-	return get_items_from_order_acceptance_doc(order_acceptance)
+def get_items_from_order_acceptance(
+	order_acceptance: str,
+	posting_date: str | None = None,
+	production_plan: str | None = None,
+):
+	"""Fetch Items from Order Acceptance, filtered by Work Order when provided."""
+	return get_items_from_order_acceptance_doc(order_acceptance, work_order=production_plan)
 
 
 @frappe.whitelist()
