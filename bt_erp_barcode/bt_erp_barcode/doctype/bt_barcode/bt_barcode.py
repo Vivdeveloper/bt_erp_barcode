@@ -1,6 +1,8 @@
 # Copyright (c) 2026, BT ERP and contributors
 # For license information, please see license.txt
 
+import re
+
 import frappe
 from frappe import _
 from frappe.model.document import Document
@@ -196,7 +198,8 @@ def get_barcode_format():
 def _serial_format_replacements(posting_date, production_plan: str, item_code: str, idx: int) -> dict:
 	"""Placeholder values for barcode_dyamic_format (longest tokens replaced first)."""
 	posting = getdate(posting_date) if posting_date else getdate()
-	base_plan = get_production_plan_base(production_plan)
+	full_plan = cstr(production_plan).strip()
+	base_plan = get_production_plan_base(full_plan)
 	row_idx = int(idx or 1)
 	yy = f"{posting.year % 100:02d}"
 	mm = f"{posting.month:02d}"
@@ -206,7 +209,9 @@ def _serial_format_replacements(posting_date, production_plan: str, item_code: s
 		"{YYYY}": str(posting.year),
 		"{YY}": yy,
 		"{MM}": mm,
-		"{production_plan}": base_plan or cstr(production_plan).strip(),
+		# Full WO including split suffix so WO26-147/5 and WO26-147/7 stay unique
+		"{production_plan}": full_plan or base_plan,
+		"{production_plan_base}": base_plan or full_plan,
 		"{count}": count,
 		"{item_code}": item_code or "",
 		"{idx}": str(row_idx),
@@ -475,19 +480,25 @@ def _barcode_items_from_child_rows(
 
 	If work_order is set:
 	- only OA rows whose custom_wo list includes that work order are used
-	- quantity comes from Production Plan Item planned_qty (not OA qty)
+	- quantity uses Work Order planned_qty when a single OA line maps to the WO
+	- when multiple OA lines share the same WO (different customer refs), each line
+	  uses its own OA qty so WO planned_qty is not multiplied per row
 	"""
 	work_order = cstr(work_order).strip()
 	qty_by_item: dict[str, float] = {}
 	if work_order:
 		qty_by_item = _planned_qty_by_item_for_work_order(work_order)
 
-	result = []
+	matched_rows = []
 	for row in rows or []:
 		row = frappe._dict(row) if isinstance(row, dict) else row
 		if work_order and not _oa_row_matches_work_order(row, work_order):
 			continue
+		matched_rows.append(row)
 
+	matching_oa_row_count = len(matched_rows)
+	result = []
+	for row in matched_rows:
 		item_code = _resolve_item_code_from_row(row)
 		if not item_code:
 			continue
@@ -496,7 +507,9 @@ def _barcode_items_from_child_rows(
 		uom = _order_acceptance_row_uom(row, item_code)
 
 		if work_order:
-			qty = _planned_qty_for_oa_row(row, item_code, qty_by_item)
+			qty = _qty_for_oa_row_with_work_order(
+				row, item_code, qty_by_item, matching_oa_row_count
+			)
 		else:
 			qty = max(1, int(flt(_order_acceptance_row_qty(row))))
 
@@ -545,34 +558,100 @@ def _planned_qty_by_item_for_work_order(work_order: str) -> dict[str, float]:
 	return qty_by_item
 
 
-def _planned_qty_for_oa_row(row, item_code: str, qty_by_item: dict[str, float]) -> int:
-	"""Resolve Work Order planned qty for an OA line (fallback 1)."""
+def _customer_ref_from_oa_row(row) -> str:
+	if not row:
+		return ""
+	for fieldname in ("customer_item_code", "customer_ref_code", "ref_code"):
+		ref = cstr(row.get(fieldname)).strip()
+		if ref:
+			return ref
+	return ""
+
+
+def _qty_match_tokens(value: str) -> set[str]:
+	"""Tokens used to fuzzy-match OA item/ref to Production Plan Item codes."""
+	parts = re.split(r"[^A-Za-z0-9]+", cstr(value).upper())
+	return {p for p in parts if len(p) >= 2}
+
+
+def _best_wo_planned_qty_for_oa_row(
+	row, item_code: str, qty_by_item: dict[str, float]
+) -> float | None:
+	"""Resolve Work Order planned_qty for an OA line; never returns OA qty."""
 	if not qty_by_item:
-		return 1
+		return None
 
-	exact = qty_by_item.get(item_code)
-	if exact and exact > 0:
-		return max(1, int(exact))
+	exact = flt(qty_by_item.get(item_code))
+	if exact > 0:
+		return exact
 
-	# OA lines often use generic item_code (e.g. Sales Item); match via customer ref in PP item name/code
-	ref = ""
-	if row:
-		for fieldname in ("customer_item_code", "customer_ref_code", "ref_code"):
-			ref = cstr(row.get(fieldname)).strip()
-			if ref:
-				break
-	if ref:
+	ref = _customer_ref_from_oa_row(row)
+	item_name = cstr(row.get("item_name") or "").strip()
+
+	# Direct containment: customer ref / item name inside PP item code
+	for term in (ref, item_name, item_code):
+		term = cstr(term).strip()
+		if not term or len(term) < 3:
+			continue
 		for pp_item, qty in qty_by_item.items():
-			if ref in cstr(pp_item) and qty > 0:
-				return max(1, int(qty))
+			if flt(qty) > 0 and term in cstr(pp_item):
+				return flt(qty)
 
-	# Single FG on the Work Order → use that planned qty
+	# Fuzzy token overlap (e.g. RH DOOR 600… ↔ (ASS) L-C-PRT 4 B DOOR 600…)
+	search_tokens: set[str] = set()
+	for term in (ref, item_name, item_code):
+		search_tokens |= _qty_match_tokens(term)
+	# Drop ultra-generic tokens that match almost everything
+	search_tokens -= {"ASS", "SBA", "BOM", "THE", "AND", "FOR", "SET"}
+
+	best_qty = None
+	best_score = 0
+	for pp_item, qty in qty_by_item.items():
+		qty = flt(qty)
+		if qty <= 0:
+			continue
+		pp_tokens = _qty_match_tokens(pp_item)
+		score = len(search_tokens & pp_tokens)
+		if score > best_score:
+			best_score = score
+			best_qty = qty
+
+	# Require a meaningful overlap so unrelated FG lines are not picked
+	if best_qty is not None and best_score >= 3:
+		return best_qty
+
 	if len(qty_by_item) == 1:
-		only_qty = next(iter(qty_by_item.values()))
+		only_qty = flt(next(iter(qty_by_item.values())))
 		if only_qty > 0:
-			return max(1, int(only_qty))
+			return only_qty
 
-	return 1
+	return None
+
+
+def _qty_for_oa_row_with_work_order(
+	row,
+	item_code: str,
+	qty_by_item: dict[str, float],
+	matching_oa_row_count: int,
+) -> int:
+	"""Qty for one OA line when a Work Order is selected.
+
+	- Prefer Work Order planned_qty (never OA qty when WO qty can be resolved).
+	- Multiple OA lines for the same WO (different customer refs): use each OA line
+	  qty so full WO planned_qty is not multiplied across every row.
+	"""
+	oa_qty = max(1, int(flt(_order_acceptance_row_qty(row))))
+
+	# Multiple distinct OA lines for one WO → keep one barcode set per OA line
+	if matching_oa_row_count > 1:
+		return oa_qty
+
+	wo_qty = _best_wo_planned_qty_for_oa_row(row, item_code, qty_by_item)
+	if wo_qty and wo_qty > 0:
+		return max(1, int(wo_qty))
+
+	# Last resort only when WO has no usable planned qty mapping
+	return oa_qty
 
 
 def get_items_from_order_acceptance_doc(

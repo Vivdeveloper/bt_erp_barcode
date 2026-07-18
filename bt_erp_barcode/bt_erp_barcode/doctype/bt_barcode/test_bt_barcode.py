@@ -37,6 +37,26 @@ class TestBTBarcode(FrappeTestCase):
 		)
 		self.assertEqual(serial2, "0526WO26-00302")
 
+	def test_generate_serial_number_keeps_split_work_order(self):
+		format_str = "{MM}{YY}{production_plan}{count}"
+		serial_5 = generate_serial_number(
+			format_str,
+			"ITEM-001",
+			"WO26-147/5",
+			"2026-07-18",
+			1,
+		)
+		serial_7 = generate_serial_number(
+			format_str,
+			"ITEM-001",
+			"WO26-147/7",
+			"2026-07-18",
+			1,
+		)
+		self.assertEqual(serial_5, "0726WO26-147/501")
+		self.assertEqual(serial_7, "0726WO26-147/701")
+		self.assertNotEqual(serial_5, serial_7)
+
 	def test_order_acceptance_items_from_sales_order(self):
 		for so_name in ("OA-001/A", "OA-003/A"):
 			if frappe.db.exists("Sales Order", so_name):
