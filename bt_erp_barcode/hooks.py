@@ -5,21 +5,22 @@ app_description = "Barcode management for BT ERP"
 app_email = "admin@example.com"
 app_license = "mit"
 
+
+_bt_barcode_doctypes = ["BT Barcode", "BT Barcode Item"]
+
 fixtures = [
 	{
-		"dt": "Property Setter",
+		"doctype": "Client Script",
 		"filters": [
-			[
-				"name",
-				"in",
-				[
-					"BT Barcode-production_plan-label",
-					"BT Barcode-production_plan-fieldtype",
-					"BT Barcode-production_plan-options",
-					"BT Barcode-na-label",
-					"BT Barcode-sales_order-hidden",
-				],
-			]
+			["dt", "in", _bt_barcode_doctypes],
+			["enabled", "=", 1],
+		],
+	},
+	{
+		"doctype": "Print Format",
+		"filters": [
+			["doc_type", "in", _bt_barcode_doctypes],
+			["disabled", "=", 0],
 		],
 	},
 ]
